@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SCHOOL FIGHTERS</title>
+<style>
+  html,body{height:100%;}
+  body{margin:0;background:#1a1a2e;display:flex;flex-direction:column;align-items:center;justify-content:center;
+       gap:12px;font-family:'Courier New',monospace;}
+  #stage{position:relative;line-height:0;}
+  canvas{width:min(97vw, calc((100vh - 150px)*1.7778), 1200px);height:auto;
+         background:#87CEEB;border:4px solid #000;border-radius:4px;
+         image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
+  #controls{display:flex;justify-content:space-between;align-items:center;
+            width:min(96vw, 900px);user-select:none;touch-action:none;}
+  .grup{display:flex;gap:8px;}
+  .tombol{width:60px;height:60px;border-radius:8px;background:#3a3a3a;color:#fff;font-size:22px;font-weight:bold;
+          display:flex;align-items:center;justify-content:center;border:3px solid #5a5a5a;
+          touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;font-family:inherit;}
+  .tombol:active{background:#5a5a5a;transform:scale(0.93);}
+  #btnPunch {width:70px;height:70px;background:crimson;border-color:#ff7b7b;font-size:28px;}
+  #btnKick  {width:70px;height:70px;background:#8b5a2b;border-color:#d1a06b;font-size:28px;}
+  #btnLempar{width:70px;height:70px;background:#1e6e4e;border-color:#5fbf94;font-size:28px;}
+  #btnFull{width:52px;height:52px;background:#2a2a3e;border-color:#777;font-size:24px;}
+  body.fs{background:#000;}
+  body.fs #stage{width:100vw;height:100vh;display:flex;align-items:center;justify-content:center;}
+  body.fs canvas{width:min(100vw, calc(100vh*1.7778));height:auto;border:none;border-radius:0;}
+  body.fs #controls{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);
+                    width:min(96vw,880px);opacity:0.55;transition:opacity .2s;z-index:10;}
+  body.fs #controls:hover{opacity:1;}
+  body.fs .tombol{width:74px;height:74px;font-size:26px;}
+  body.fs #btnPunch,body.fs #btnKick,body.fs #btnLempar{width:88px;height:88px;font-size:36px;}
+  body.fs #btnFull{position:fixed;top:14px;right:14px;opacity:0.35;width:60px;height:60px;z-index:11;}
+  body.fs #btnFull:hover{opacity:1;}
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="game" width="1600" height="900"></canvas>
+</div>
+
+<div id="controls">
+  <div class="grup">
+    <div class="tombol" id="btnKiri">◀</div>
+    <div class="tombol" id="btnKanan">▶</div>
+    <div class="tombol" id="btnLompat">▲</div>
+  </div>
+  <div class="tombol" id="btnFull" title="atau tekan F">⛶</div>
+  <div class="grup">
+    <div class="tombol" id="btnPunch">👊</div>
+    <div class="tombol" id="btnKick">🦵</div>
+    <div class="tombol" id="btnLempar">🎯</div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const SCALE = 2;
+const VW = 800, VH = 450;
+const GRAVITASI = 0.8;
+const TANAH_Y = 400;
+
+// ===== 🎓 ROSTER SCHOOL FIGHTERS =====
+const KARAKTER = {
+  andra: { nama:'ANDRA', julukan:'"Si Nakal"', senjata:'penghapus',
+           deskripsi:'Cepat & gesit!', speed:2.8, jumpV:-14.5,
+           width:60, height:100, spawnY:0.16, pvScale:1.55, warna:'#e8443a' },
+  jalal: { nama:'BANG JALAL', julukan:'"Preman Kelas 3"', senjata:'sandal',
+           deskripsi:'Pukulannya BERAT!', speed:1.9, jumpV:-13,
+           width:60, height:100, spawnY:0.16, pvScale:1.55, warna:'#8a4a2a' },
+  jimmy: { nama:'JIMMY', julukan:'"Maskot Sekolah"', senjata:'pisang',
+           deskripsi:'Kecil & susah kena!', speed:3.2, jumpV:-15.5,
+           width:50, height:72, spawnY:0.19, pvScale:1.9, warna:'#c98a2a' },
+  robo:  { nama:'ROBO OSIS', julukan:'"Penjaga Sekolah"', senjata:'laser',
+           deskripsi:'Zap! Laser OSIS!', speed:1.7, jumpV:-13,
+           width:64, height:106, spawnY:0.49, pvScale:1.5, warna:'#6e7681' }
+};
+const PILIHAN = ['andra','jalal','jimmy','robo'];
+
+const SERANGAN = {
+  punch:  { dur:24, damage:8,  knockback:14, suara:()=>bunyi(300,90,0.08,'square',0.06) },
+  kick:   { dur:34, damage:14, knockback:22, suara:()=>bunyi(220,70,0.12,'square',0.07) },
+  lempar: { dur:22, damage:0,  knockback:0,  suara:()=>bunyi(500,150,0.1,'triangle',0.05) }
+};
+const SENJATA_W = {
+  penghapus:{ spd:7.5, dmg:9,  kb:10, arc:0.02, spin:0.3  },
+  sandal:   { spd:6.5, dmg:10, kb:10, arc:0.06, spin:0.25 },
+  pisang:   { spd:5.5, dmg:8,  kb:9,  arc:0.12, spin:0.18 },
+  laser:    { spd:13,  dmg:8,  kb:6,  arc:0,    spin:0    }
+};
+
+// ===== 🔊 AUDIO =====
+let audioCtx = null;
+function initAudio(){ if(!audioCtx){ try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
+function bunyi(f0,f1,dur,tipe,vol){
+  if(!audioCtx) return;
+  const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+  o.type=tipe; o.frequency.setValueAtTime(f0,audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(Math.max(1,f1),audioCtx.currentTime+dur);
+  g.gain.setValueAtTime(vol,audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+dur);
+  o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+dur);
+}
+const suaraKena   = () => bunyi(160,40,0.18,'sawtooth',0.14);
+const suaraKO     = () => bunyi(400,30,0.7,'sawtooth',0.2);
+const suaraFight  = () => bunyi(880,880,0.15,'square',0.1);
+const suaraSelect = () => bunyi(523,1046,0.12,'square',0.1);
+const suaraBoom   = () => bunyi(120,25,0.4,'sawtooth',0.25);
+const suaraMenang = () => { bunyi(523,523,0.12,'square',0.1);
+  setTimeout(()=>bunyi(659,659,0.12,'square',0.1),130);
+  setTimeout(()=>bunyi(784,784,0.3,'square',0.1),260); };
+const suaraLompat = () => bunyi(300,600,0.1,'square',0.05);
+
+// ===== LOGIKA FIGHTER =====
+function buatFighter(x,tipe){
+  const K=KARAKTER[tipe];
+  return { x, y:TANAH_Y-K.height, width:K.width, height:K.height,
+    speed:K.speed, jumpV:K.jumpV, vx:0, vy:0,
+    isJumping:false, facing:1, attack:null, attackTimer:0, attackDur:1, hasHit:false,
+    hitFlash:0, hp:200, maxHP:200, dispHP:200,
+    tergeletak:false, fallProgress:0,
+    walkTimer:0, lastX:x, tipe, nama:K.nama };
+}
+const player = buatFighter(100,'andra');
+const enemy  = buatFighter(550,'jalal');
+enemy.facing = -1;
+
+let gameState='intro', ronde=1, menangPlayer=0, menangBot=0, pemenang=null;
+let introTimer=240, koTimer=0, aiTimer=0, hits=0, kena=0, shake=0;
+let sisaWaktu=99*60, koReason='ko';
+let pilihanPlayer='andra', pilihanBot='jalal', pilihanArena='lapangan';
+let pilihFase=1;
+const mouse={x:-1,y:-1};
+let stateSebelumPause='main';
+const TOMBOL_PAUSE={x:VW/2-21,y:46,w:42,h:42};
+const BTN_LANJUT={x:260,y:170,w:280,h:56}, BTN_ULANG={x:260,y:245,w:280,h:56}, BTN_MENU={x:260,y:320,w:280,h:56};
+let proyektil=[];
+
+// ===== 📷 KAMERA =====
+const cam={x:VW/2,z:1};
+function isFS(){ return !!(document.fullscreenElement||document.webkitFullscreenElement)||document.body.classList.contains('fs'); }
+function updateCamera(){
+  const mid=(player.x+player.width/2 + enemy.x+enemy.width/2)/2;
+  const dist=Math.abs(player.x-enemy.x);
+  const tz=isFS()?Math.max(1.30,Math.min(1.55,1.62-dist/500))
+              :Math.max(1.12,Math.min(1.32,1.42-dist/500));
+  cam.z+=(tz-cam.z)*0.06;
+  const half=VW/(2*cam.z);
+  const tx=Math.max(half,Math.min(VW-half,mid));
+  cam.x+=(tx-cam.x)*0.08;
+}
+
+// ===== INPUT =====
+const keys={}, prevKeys={};
+const baruDitekan = k => keys[k] && !prevKeys[k];
+document.addEventListener('keydown', e=>{
+  if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key)) e.preventDefault();
+  if(e.repeat) return;
+  keys[e.key]=true; initAudio();
+  if(gameState==='intro'){ gameState='menu'; return; }
+  if(gameState==='menu'){ if(e.key==='Enter'||e.key===' '){ suaraSelect(); gameState='pilih'; } return; }
+  if(gameState==='pilih'){
+    const idx=['1','2','3','4'].indexOf(e.key);
+    if(idx>=0) pilihKarakter(PILIHAN[idx]);
+    return; }
+  if(gameState==='arena'){
+    if(e.key==='1') pilihArena('lapangan');
+    if(e.key==='2') pilihArena('rooftop'); return; }
+  if(gameState==='pause'){
+    if(e.key==='p'||e.key==='P'||e.key==='Escape'||e.key==='Enter'||e.key===' ') lanjutDariPause();
+    else if(e.key==='r'||e.key==='R') mulaiRonde();
+    else if(e.key==='m'||e.key==='M') resetSemua(); return; }
+  if((gameState==='main'||gameState==='ronde')&&(e.key==='p'||e.key==='P'||e.key==='Escape')){ pauseGame(); return; }
+  if(gameState==='ko'&&koTimer>45&&(e.key==='r'||e.key==='R')) rondeBerikutnya();
+  if(gameState==='akhir'&&(e.key==='r'||e.key==='R')) resetSemua();
+});
+document.addEventListener('keyup', e=>keys[e.key]=false);
+window.addEventListener('blur', ()=>{ for(const k in keys) keys[k]=false;
+  if(gameState==='main'||gameState==='ronde') pauseGame(); });
+
+function wireTombol(id,tombol){
+  const el=document.getElementById(id);
+  const tekan=e=>{e.preventDefault();keys[tombol]=true;initAudio();};
+  const lepas=e=>{e.preventDefault();keys[tombol]=false;};
+  el.addEventListener('touchstart',tekan); el.addEventListener('touchend',lepas); el.addEventListener('touchcancel',lepas);
+  el.addEventListener('mousedown',tekan); el.addEventListener('mouseup',lepas); el.addEventListener('mouseleave',lepas);
+}
+wireTombol('btnKiri','ArrowLeft'); wireTombol('btnKanan','ArrowRight'); wireTombol('btnLompat','ArrowUp');
+wireTombol('btnPunch','a'); wireTombol('btnKick','s'); wireTombol('btnLempar','d');
+
+// ===== ⛶ FULLSCREEN =====
+function toggleFull(){
+  if(!document.fullscreenElement && !document.webkitFullscreenElement){
+    const el=document.documentElement;
+    const req=el.requestFullscreen||el.webkitRequestFullscreen;
+    if(req){
+      try{
+        const p=req.call(el);
+        if(p&&p.catch) p.catch(()=>{});
+      }catch(e){}
+    }
+    document.body.classList.add('fs');
+  } else {
+    const ex=document.exitFullscreen||document.webkitExitFullscreen;
+    if(ex) try{ ex.call(document); }catch(e){}
+    document.body.classList.remove('fs');
+  }
+}
+document.getElementById('btnFull').addEventListener('click', toggleFull);
+document.addEventListener('fullscreenchange', ()=>{ document.body.classList.toggle('fs', !!document.fullscreenElement); });
+
+// ===== KLIK/TAP =====
+function posisiKlik(e){ const r=canvas.getBoundingClientRect();
+  return { x:(e.clientX-r.left)*(VW/r.width), y:(e.clientY-r.top)*(VH/r.height) }; }
+function dalamKotak(px,py,x,y,w,h){ return px>=x&&px<=x+w&&py>=y&&py<=y+h; }
+function panelPilih(i){ return { x:30+i*185, y:100, w:170, h:280 }; }
+function klikLayar(x,y){
+  initAudio();
+  if(gameState==='intro'){ gameState='menu'; return; }
+  if(gameState==='menu'){ if(dalamKotak(x,y,270,235,260,72)){ suaraSelect(); gameState='pilih'; } return; }
+  if(gameState==='pilih'){
+    for(let i=0;i<4;i++){ const p=panelPilih(i);
+      if(dalamKotak(x,y,p.x,p.y,p.w,p.h)){ pilihKarakter(PILIHAN[i]); return; } }
+    return; }
+  if(gameState==='arena'){
+    if(dalamKotak(x,y,110,130,250,240)) pilihArena('lapangan');
+    else if(dalamKotak(x,y,440,130,250,240)) pilihArena('rooftop'); return; }
+  if(gameState==='main'||gameState==='ronde'){
+    if(dalamKotak(x,y,TOMBOL_PAUSE.x,TOMBOL_PAUSE.y,TOMBOL_PAUSE.w,TOMBOL_PAUSE.h)) pauseGame(); return; }
+  if(gameState==='pause'){
+    if(dalamKotak(x,y,BTN_LANJUT.x,BTN_LANJUT.y,BTN_LANJUT.w,BTN_LANJUT.h)) lanjutDariPause();
+    else if(dalamKotak(x,y,BTN_ULANG.x,BTN_ULANG.y,BTN_ULANG.w,BTN_ULANG.h)) mulaiRonde();
+    else if(dalamKotak(x,y,BTN_MENU.x,BTN_MENU.y,BTN_MENU.w,BTN_MENU.h)) resetSemua(); return; }
+  if(gameState==='ko'&&koTimer>45) rondeBerikutnya();
+  else if(gameState==='akhir') resetSemua();
+}
+canvas.addEventListener('mousedown', e=>{ const p=posisiKlik(e); klikLayar(p.x,p.y); });
+canvas.addEventListener('touchstart', e=>{ e.preventDefault(); const p=posisiKlik(e.changedTouches[0]); klikLayar(p.x,p.y); });
+canvas.addEventListener('mousemove', e=>{ const p=posisiKlik(e); mouse.x=p.x; mouse.y=p.y; updateCursor(); });
+function updateCursor(){
+  let pointer=(gameState==='intro'||gameState==='ko'||gameState==='akhir');
+  if(gameState==='menu')  pointer=dalamKotak(mouse.x,mouse.y,270,235,260,72);
+  if(gameState==='pilih'){ pointer=false;
+    for(let i=0;i<4;i++){ const p=panelPilih(i);
+      if(dalamKotak(mouse.x,mouse.y,p.x,p.y,p.w,p.h)) pointer=true; } }
+  if(gameState==='arena') pointer=dalamKotak(mouse.x,mouse.y,110,130,250,240)||dalamKotak(mouse.x,mouse.y,440,130,250,240);
+  if(gameState==='main'||gameState==='ronde') pointer=dalamKotak(mouse.x,mouse.y,TOMBOL_PAUSE.x,TOMBOL_PAUSE.y,TOMBOL_PAUSE.w,TOMBOL_PAUSE.h);
+  if(gameState==='pause') pointer=dalamKotak(mouse.x,mouse.y,BTN_LANJUT.x,BTN_LANJUT.y,BTN_LANJUT.w,BTN_LANJUT.h)||
+    dalamKotak(mouse.x,mouse.y,BTN_ULANG.x,BTN_ULANG.y,BTN_ULANG.w,BTN_ULANG.h)||dalamKotak(mouse.x,mouse.y,BTN_MENU.x,BTN_MENU.y,BTN_MENU.w,BTN_MENU.h);
+  canvas.style.cursor=pointer?'pointer':'default';
+}
+
+// ===== PAUSE =====
+function pauseGame(){ stateSebelumPause=gameState; gameState='pause'; }
+function lanjutDariPause(){ gameState=stateSebelumPause; for(const k in keys) keys[k]=false; suaraSelect(); }
+
+// ===== COMBAT =====
+function mulaiSerangan(f,jenis){
+  const S=SERANGAN[jenis];
+  f.attack=jenis; f.attackDur=S.dur; f.attackTimer=S.dur; f.hasHit=false; S.suara();
+}
+function kotakSerangan(f){
+  const h=f.height, w=f.width;
+  let aw,ah,ay;
+  if(f.attack==='kick'){ aw=Math.round(w*0.9); ah=h*0.26; ay=f.y+h*0.5-12; }
+  else { aw=Math.round(w*0.8); ah=h*0.2; ay=f.y+h*0.3-12; }
+  return f.facing===1 ? {x:f.x+w-12,y:ay,w:aw,h:ah} : {x:f.x+12-aw,y:ay,w:aw,h:ah};
+}
+function kotakBadan(f){ return {x:f.x,y:f.y,w:f.width,h:f.height}; }
+function cekTabrakan(a,b){ return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y; }
+function clampX(f){ if(f.x<0){f.x=0;f.vx=0;} if(f.x>VW-f.width){f.x=VW-f.width;f.vx=0;} }
+function fisika(f){
+  const lantai=TANAH_Y-f.height;
+  f.vy+=GRAVITASI; f.y+=f.vy;
+  if(f.y>=lantai){ f.y=lantai; f.vy=0; f.isJumping=false; }
+  f.x+=f.vx; f.vx*=0.85; clampX(f);
+  if(f.attack){
+    f.attackTimer--;
+    if(f.attack==='lempar'&&!f.hasHit&&f.attackTimer===10){
+      f.hasHit=true;
+      const K=KARAKTER[f.tipe], W=SENJATA_W[K.senjata];
+      proyektil.push({ x:f.x+f.width/2+f.facing*(f.width/2+14),
+                       y:f.y+f.height*K.spawnY,
+                       vx:f.facing*W.spd, rot:0, tipe:K.senjata, owner:f });
+    }
+    if(f.attackTimer<=0) f.attack=null;
+  }
+  if(f.hitFlash>0) f.hitFlash--;
+  if(f.tergeletak&&f.fallProgress<1) f.fallProgress+=0.08;
+  const gerak=Math.abs(f.x-f.lastX)>0.15;
+  if(!f.tergeletak&&f.hitFlash<=0&&!f.isJumping&&!f.attack&&gerak) f.walkTimer+=0.14;
+  else if(!gerak) f.walkTimer=0;
+  f.lastX=f.x;
+  f.dispHP += (Math.max(0,f.hp)-f.dispHP)*0.05;
+}
+function pisahBadan(){
+  if(player.tergeletak||enemy.tergeletak) return;
+  const overlap=(player.width+enemy.width)/2-Math.abs(player.x-enemy.x);
+  if(overlap>0){ const dir=player.x<enemy.x?1:-1;
+    player.x-=dir*overlap/2; enemy.x+=dir*overlap/2; clampX(player); clampX(enemy); }
+}
+function cekSerangan(p,k){
+  if(!p.attack||p.attack==='lempar'||p.hasHit) return false;
+  if(!cekTabrakan(kotakSerangan(p),kotakBadan(k))) return false;
+  const S=SERANGAN[p.attack];
+  p.hasHit=true; k.vx=p.facing*S.knockback; k.hitFlash=8; k.hp-=S.damage;
+  shake=p.attack==='kick'?14:10; suaraKena(); return true;
+}
+function updateProyektil(){
+  for(let i=proyektil.length-1;i>=0;i--){
+    const p=proyektil[i], W=SENJATA_W[p.tipe];
+    p.x+=p.vx;
+    p.rot+=W.spin*(p.vx>0?1:-1);
+    p.y+=W.arc;
+    const target=p.owner===player?enemy:player;
+    const hw=p.tipe==='laser'?12:9, hh=p.tipe==='laser'?4:9;
+    if(!target.tergeletak&&cekTabrakan({x:p.x-hw,y:p.y-hh,w:hw*2,h:hh*2},kotakBadan(target))){
+      target.hp-=W.dmg;
+      target.vx=(p.vx>0?1:-1)*W.kb;
+      target.hitFlash=8; shake=8; suaraKena();
+      proyektil.splice(i,1); continue;
+    }
+    if(p.x<-60||p.x>VW+60||p.y>VH+20) proyektil.splice(i,1);
+  }
+}
+function updateAI(){
+  const jarak=enemy.x-player.x, jarakAbs=Math.abs(jarak);
+  if(!enemy.attack) enemy.facing=jarak>0?-1:1;
+  if(enemy.attack||enemy.hitFlash>0) return;
+  if(aiTimer>0){ aiTimer--; return; }
+  if(jarakAbs>220&&Math.random()<0.35){ mulaiSerangan(enemy,'lempar'); aiTimer=50+Math.random()*50; }
+  else if(jarakAbs>90){ enemy.x-=Math.sign(jarak)*enemy.speed; }
+  else{ const r=Math.random();
+    if(r<0.45) mulaiSerangan(enemy,'punch');
+    else if(r<0.65) mulaiSerangan(enemy,'kick');
+    aiTimer=35+Math.random()*50; }
+}
+
+// ===== ALUR MATCH =====
+function pilihKarakter(tipe){
+  suaraSelect();
+  if(pilihFase===1){ pilihanPlayer=tipe; pilihFase=2; }
+  else { pilihanBot=tipe; pilihFase=1; gameState='arena'; }
+}
+function pilihArena(a){ pilihanArena=a; suaraSelect(); mulaiMatch(); }
+function mulaiMatch(){ menangPlayer=0; menangBot=0; ronde=1; mulaiRonde(); }
+function mulaiRonde(){
+  Object.assign(player,buatFighter(100,pilihanPlayer));
+  Object.assign(enemy,buatFighter(550,pilihanBot));
+  enemy.facing=-1;
+  proyektil=[]; hits=0; kena=0; shake=0; pemenang=null; aiTimer=0;
+  sisaWaktu=99*60; koReason='ko';
+  gameState='ronde'; introTimer=90;
+}
+function cekKO(){
+  if(gameState!=='main') return;
+  if(enemy.hp<=0)       mulaiKO(enemy,player,'ko');
+  else if(player.hp<=0) mulaiKO(player,enemy,'ko');
+}
+function mulaiKO(kalah,menang,alasan){
+  gameState='ko'; koTimer=0; pemenang=menang; koReason=alasan;
+  kalah.tergeletak=true;
+  if(alasan!=='seri'){ if(menang===player) menangPlayer++; else menangBot++; }
+  shake=15; suaraKO();
+}
+function cekWaktu(){
+  if(gameState!=='main') return;
+  sisaWaktu--;
+  if(sisaWaktu<=0){
+    if(player.hp===enemy.hp) mulaiKO(enemy,null,'seri');
+    else if(player.hp>enemy.hp) mulaiKO(enemy,player,'waktu');
+    else mulaiKO(player,enemy,'waktu');
+  }
+}
+function rondeBerikutnya(){
+  if(koReason==='seri'){ mulaiRonde(); return; }
+  if(menangPlayer>=2||menangBot>=2){ gameState='akhir'; suaraMenang(); }
+  else{ ronde++; mulaiRonde(); }
+}
+function resetSemua(){
+  proyektil=[]; menangPlayer=0; menangBot=0; ronde=1;
+  hits=0; kena=0; shake=0; pemenang=null; pilihFase=1;
+  gameState='menu';
+}
+
+// ===== UPDATE =====
+function update(){
+  if(gameState==='intro'){
+    introTimer--;
+    if(introTimer===61){ shake=10; if(audioCtx) suaraBoom(); }
+    if(introTimer<=0) gameState='menu';
+  } else if(gameState==='ronde'){
+    introTimer--; fisika(player); fisika(enemy); pisahBadan();
+    if(introTimer<=0){ gameState='main'; suaraFight(); }
+  } else if(gameState==='main'){
+    const bisaGerak=!player.attack&&player.hitFlash<=0;
+    if(bisaGerak){
+      if(keys['ArrowLeft']) player.x-=player.speed;
+      if(keys['ArrowRight']) player.x+=player.speed;
+      player.facing=player.x<enemy.x?1:-1;
+    }
+    if((baruDitekan(' ')||baruDitekan('ArrowUp'))&&!player.isJumping&&bisaGerak){
+      player.vy=player.jumpV; player.isJumping=true; suaraLompat();
+    }
+    if(!player.attack&&player.hitFlash<=0){
+      if(baruDitekan('a')) mulaiSerangan(player,'punch');
+      else if(baruDitekan('s')) mulaiSerangan(player,'kick');
+      else if(baruDitekan('d')) mulaiSerangan(player,'lempar');
+    }
+    updateAI();
+    fisika(player); fisika(enemy); pisahBadan(); updateProyektil();
+    if(cekSerangan(player,enemy)) hits++;
+    if(cekSerangan(enemy,player)) kena++;
+    cekKO(); cekWaktu();
+  } else if(gameState==='ko'){
+    koTimer++; fisika(player); fisika(enemy); updateProyektil();
+  } else if(gameState==='pause'){
+    // ❄️ beku total
+  } else {
+    fisika(player); fisika(enemy);
+  }
+  if(shake>0.5) shake*=0.8; else shake=0;
+  updateCamera();
+  for(const k in keys) prevKeys[k]=keys[k];
+}
+
+// ===== 📺 PIXEL ENGINE =====
+function pxr(x,y,w,h,c){ ctx.fillStyle=c;
+  ctx.fillRect(Math.round(x/3)*3, Math.round(y/3)*3, Math.max(3,Math.round(w/3)*3), Math.max(3,Math.round(h/3)*3)); }
+function pixCircle(cx,cy,r,c){ for(let yy=-r;yy<=r;yy+=3){ const hw=Math.sqrt(Math.max(0,r*r-yy*yy)); pxr(cx-hw,cy+yy,hw*2,3,c);} }
+function pixTri(cx,peakY,h,baseW,c){ for(let i=0;i<h/3;i++){ const w=baseW*(i*3/h); pxr(cx-w/2,peakY+i*3,w,3,c);} }
+function pixEllipse(cx,cy,rx,ry,c,t){ for(let a=0;a<Math.PI*2;a+=0.11){ pxr(cx+Math.cos(a)*rx-t/2, cy+Math.sin(a)*ry-t/2, t, t, c);} }
+function teks(t,x,y,size,c,align){
+  ctx.font='bold '+size+'px "Courier New", monospace'; ctx.textAlign=align||'center';
+  ctx.fillStyle='#0a0a0a'; ctx.fillText(t,x+3,y+3);
+  ctx.fillStyle=c; ctx.fillText(t,x,y); ctx.textAlign='left';
+}
+
+// ===== 👤 SPRITE KARAKTER =====
+function gambarKarakterPixel(f){
+  const flash=f.hitFlash>0;
+  const t=performance.now()/1000;
+  const s=Math.sin(f.walkTimer||0);
+  const walking=f.walkTimer>0;
+  let fr=-1;
+  if(f.attack){ const pp=1-f.attackTimer/f.attackDur; fr=pp<0.22?0:(pp<0.55?1:2); }
+  const punching=f.attack==='punch'||f.attack==='lempar';
+  const kicking=f.attack==='kick';
+  const bob=walking?((Math.cos(f.walkTimer)>0)?0:1):((Math.sin(t*2.2)>0)?0:1);
+  const dx=walking?Math.round(s*2):0;
+  const sway=walking?Math.round(s*1):0;
+
+  const cs=Math.round((f.x+f.width/2)/3)*3;
+  ctx.save();
+  if(f.tergeletak){
+    ctx.translate(cs,f.y+f.height);
+    ctx.rotate(-f.facing*Math.PI/2*f.fallProgress);
+    ctx.translate(-cs,-(f.y+f.height));
+  }
+  ctx.translate(cs,0); ctx.scale(f.facing,1); ctx.translate(-cs,0);
+
+  let ox,oy;
+  const P=(x,y,w,h,c)=>{ ctx.fillStyle=flash?'#ffffff':c; ctx.fillRect(ox+x*3,oy+y*3,w*3,h*3); };
+  function setGrid(cols,rows){ ox=cs-Math.round(cols/2)*3; oy=f.y+f.height-rows*3; }
+
+  if(f.tipe==='andra'){
+    /* ============ ANDRA — murid seragam (30x42) ============ */
+    setGrid(30,42);
+    P(9,0,13,2,'#161616'); P(14,2,3,1,'#161616'); P(9,3,1,2,'#161616');
+    P(9,3,12,6,'#e0ac69');
+    P(10,4,3,1,'#1a1a1a'); P(13,4,1,1,'#1a1a1a');
+    P(16,4,3,1,'#1a1a1a');
+    P(11,5,2,1,'#ffffff'); P(12,5,1,1,'#000000');
+    P(16,5,2,1,'#ffffff'); P(17,5,1,1,'#000000');
+    P(19,6,1,1,'#c98d5f');
+    P(14,8,4,1,'#8a4a3a');
+    P(13,9,5,2,'#c98d5f');
+    // lengan belakang
+    if(punching&&fr===0){ P(3,12,4,3,'#c98d5f'); P(3,15,3,3,'#c98d5f'); }
+    else { P(4,11,4,3,'#c98d5f'); P(3,13,4,3,'#c98d5f'); P(4,16,3,4,'#c98d5f'); P(4,20,3,3,'#c98d5f'); }
+    // torso: seragam putih
+    P(6,10,19,2,'#f2f2f2');
+    P(12,10,7,1,'#2e7d4f');
+    P(7,12,17,4,'#f2f2f2');
+    P(15,12,1,4,'#d0d0d0');
+    P(7,16,17,3,'#e6e6e6');
+    P(6,19,17,4,'#2e7d4f');
+    P(6,19,17,1,'#256a42');
+    // kaki
+    if(f.isJumping){
+      P(7,23,6,5,'#e0ac69'); P(17,23,6,5,'#d0a060');
+      P(5,28,6,4,'#e0ac69'); P(18,28,6,4,'#d0a060');
+      P(4,32,7,3,'#101010'); P(18,32,7,3,'#161616');
+    } else if(kicking&&fr===0){
+      P(7,23,5,17,'#e0ac69'); P(6,38,7,4,'#101010');
+      P(17,23,5,3,'#e0ac69'); P(19,26,4,4,'#e0ac69'); P(20,30,4,2,'#161616');
+    } else if(kicking&&fr===1){
+      P(7,23,5,17,'#e0ac69'); P(6,38,7,4,'#101010');
+      P(19,25,7,3,'#e0ac69'); P(26,25,6,3,'#e0ac69');
+      P(32,24,4,5,'#161616'); P(32,27,4,1,'#d8d8d8');
+    } else {
+      P(7,23,6,7,'#e0ac69'); P(17,23,6,7,'#d0a060');
+      P(7+dx,30,5,8,'#e0ac69'); P(17-dx,30,5,8,'#d0a060');
+      P(6+dx,38,7,4,'#101010'); P(16-dx,38,7,4,'#161616');
+      P(6+dx,41,7,1,'#d8d8d8'); P(16-dx,41,7,1,'#e8e8e8');
+    }
+    // lengan depan
+    if(punching&&fr===1){
+      P(22,12,3,3,'#e0ac69');
+      P(25,12,7,3,'#e0ac69');
+      P(32,11,4,5,'#e0ac69');
+    } else if(punching&&fr===0){
+      P(20,12,3,3,'#e0ac69');
+      P(18,11,3,3,'#e0ac69');
+    } else {
+      P(22,12,4,3,'#e0ac69');
+      P(24,14,3,3,'#e0ac69');
+      P(24,9,3,3,'#e0ac69');
+      P(24,6,4,4,'#e0ac69');
+    }
+  } else if(f.tipe==='jalal'){
+    /* ============ BANG JALAL — preman sarungan (30x42) ============ */
+    setGrid(30,42);
+    P(10,0,10,1,'#15151c'); P(8,1,14,2,'#15151c'); P(8,3,14,1,'#c9a83c');
+    P(9,4,12,5,'#e0ac69');
+    P(8,5,1,2,'#c98d5f'); P(21,5,1,2,'#c98d5f');
+    P(11,4,3,1,'#1a1a1a'); P(16,4,3,1,'#1a1a1a');
+    P(11,5,2,1,'#111111'); P(17,5,2,1,'#111111');
+    P(18,6,1,1,'#c98d5f');
+    P(9,7,12,2,'#2b2b2b'); P(10,9,10,2,'#2b2b2b'); P(12,11,6,1,'#2b2b2b');
+    // lengan belakang
+    if(punching&&fr===0){ P(3,13,4,4,'#c98d5f'); P(4,17,3,3,'#c98d5f'); }
+    else { P(4,13,4,5,'#33302e'); P(5,18,3,3,'#c98d5f'); P(5,21,3,2,'#c98d5f'); }
+    // torso: vest hitam
+    P(6,12,18,2,'#33302e');
+    P(12,12,2,1,'#262422'); P(17,12,2,1,'#262422');
+    P(7,14,16,4,'#33302e');
+    P(8,18,14,3,'#2a2826');
+    P(15,14,1,7,'#22201e');
+    P(14,15,1,1,'#c9a83c'); P(14,17,1,1,'#c9a83c');
+    P(18,15,3,2,'#2a2826');
+    // SARUNG maroon
+    if(kicking&&fr===1){
+      P(8,22,14,6,'#5a1f2e');
+      P(11,22,1,6,'#3a1220'); P(18,22,1,6,'#3a1220');
+      P(20,27,9,3,'#e0ac69');
+      P(29,26,3,5,'#6b4b2a');
+    } else if(kicking&&fr===0){
+      P(8,22,14,6,'#5a1f2e');
+      P(11,22,1,6,'#3a1220'); P(18,22,1,6,'#3a1220');
+      P(17,24,4,3,'#e0ac69'); P(20,26,3,3,'#6b4b2a');
+      P(6,28,18,6,'#5a1f2e'); P(5,34,20,4,'#5a1f2e');
+      P(10,28,1,10,'#3a1220'); P(17,28,1,10,'#3a1220'); P(6,31,18,1,'#3a1220');
+    } else {
+      P(9,21,12,1,'#4a1826');
+      P(8,22,14,4,'#5a1f2e');
+      P(7,26,16,4,'#5a1f2e');
+      P(6+sway,30,18,4,'#5a1f2e');
+      P(5+sway,34,20,4,'#5a1f2e');
+      P(11,22,1,15,'#3a1220'); P(18,22,1,15,'#3a1220');
+      P(8,25,14,1,'#3a1220'); P(7,29,16,1,'#3a1220'); P(6+sway,33,18,1,'#3a1220');
+      P(12,23,1,1,'#c9a83c'); P(19,27,1,1,'#c9a83c');
+      P(10,38,3,1,'#c98d5f'); P(16,38,3,1,'#e0ac69');
+      P(9+dx,39,5,3,'#6b4b2a'); P(15-dx,39,5,3,'#6b4b2a');
+      P(9+dx,39,5,1,'#7d5836'); P(15-dx,39,5,1,'#7d5836');
+    }
+    // lengan depan
+    if(punching&&fr===1){
+      P(21,13,3,3,'#33302e');
+      P(24,13,7,3,'#e0ac69');
+      P(31,12,4,5,'#e0ac69');
+    } else if(punching&&fr===0){
+      P(20,13,3,3,'#33302e');
+      P(18,12,3,3,'#e0ac69');
+    } else {
+      P(21,13,4,4,'#33302e');
+      P(23,10,3,3,'#33302e');
+      P(23,6,4,4,'#e0ac69');
+    }
+  } else if(f.tipe==='jimmy'){
+    /* ============ JIMMY si monyet (26x32) ============ */
+    setGrid(26,32);
+    P(1+sway,14,3,2,'#6e4626'); P(0+sway,16,3,2,'#6e4626');
+    P(1+sway,18,3,2,'#6e4626'); P(3+sway,20,3,2,'#6e4626');
+    P(4,1,4,4,'#8a5a34'); P(5,2,2,2,'#6e4626');
+    P(18,1,4,4,'#8a5a34'); P(19,2,2,2,'#6e4626');
+    P(5,3,16,8,'#8a5a34');
+    P(6,4,14,1,'#6e4626');
+    P(8,6,10,5,'#e0b078');
+    P(8,5,3,2,'#ffffff'); P(9,5,1,2,'#000000');
+    P(14,5,3,2,'#ffffff'); P(15,5,1,2,'#000000');
+    P(11,8,1,1,'#7a4a2a'); P(13,8,1,1,'#7a4a2a');
+    P(10,9,6,1,'#7a4a2a'); P(11,9,4,1,'#ffffff');
+    if(punching&&fr===0){ P(3,12,4,3,'#6e4626'); P(4,15,3,3,'#6e4626'); }
+    else { P(4,12,3,4,'#6e4626'); P(3,16,3,5,'#6e4626'); P(3,21,4,3,'#e0b078'); }
+    P(7,11,13,10,'#8a5a34');
+    P(10,13,8,7,'#e0b078');
+    P(7,11,3,9,'#c03030'); P(17,11,3,9,'#c03030');
+    P(8,12,1,1,'#ffd700');
+    P(8,21,4,4,'#6e4626'); P(14,21,4,4,'#8a5a34');
+    P(8,25,4,4,'#6e4626'); P(14,25,4,4,'#8a5a34');
+    P(6,29,7,3,'#6e4626'); P(13,29,7,3,'#8a5a34');
+    if(f.attack==='lempar'&&fr===0){
+      P(17,8,3,4,'#8a5a34'); P(17,4,4,3,'#e0b078');
+    } else if(f.attack==='lempar'&&fr===1){
+      P(18,12,6,3,'#8a5a34'); P(24,11,4,4,'#e0b078');
+    } else if(punching&&fr===1){
+      P(18,12,6,3,'#8a5a34'); P(24,11,4,4,'#e0b078');
+    } else {
+      P(17,12,3,4,'#8a5a34'); P(18,9,3,3,'#8a5a34');
+      P(18,6,4,4,'#e0b078');
+    }
+  } else {
+    /* ============ ROBO OSIS (32x44) ============ */
+    setGrid(32,44);
+    P(15,0,4,3,'#ff3333'); P(15,3,2,2,'#3a3f47');
+    P(9,5,15,7,'#9aa3ad');
+    P(10,12,13,2,'#6e7681');
+    P(10,7,13,3,'#14171c');
+    P(17,7,5,3,'#ff3333'); P(18,8,3,1,'#ff8888');
+    P(8,7,1,3,'#6e7681'); P(24,7,1,3,'#6e7681');
+    P(14,14,4,2,'#3a3f47');
+    if(punching&&fr===0){ P(4,17,4,3,'#6e7681'); P(5,20,3,3,'#6e7681'); }
+    else if(punching&&fr===1){
+      P(5,17,4,3,'#6e7681');
+      P(8,18,11,3,'#9aa3ad');
+      P(19,17,5,5,'#6e7681');
+    } else {
+      P(5,17,4,3,'#6e7681'); P(4,20,3,5,'#6e7681');
+      P(4,25,3,2,'#3a3f47'); P(4,27,3,6,'#9aa3ad'); P(4,33,4,4,'#6e7681');
+    }
+    P(8,16,16,6,'#9aa3ad');
+    P(13,18,6,3,'#59d5ff'); P(14,19,4,1,'#ccf3ff');
+    P(9,17,3,1,'#3a3f47'); P(20,17,3,1,'#3a3f47');
+    P(9,22,14,3,'#6e7681'); P(9,23,14,1,'#3a3f47');
+    P(11,25,10,3,'#3a3f47');
+    P(22,16,6,4,'#6e7681'); P(23,17,1,1,'#c9a83c');
+    P(25,20,3,5,'#9aa3ad');
+    P(25,26,4,4,'#6e7681');
+    P(26,25,10,3,'#2b2f36'); P(36,25,2,3,'#4a5058');
+    P(26,28,3,4,'#4a5058'); P(28,23,2,2,'#2b2f36');
+    if(f.attack==='lempar'&&fr===1){
+      P(38,23,5,7,'#b0f0ff'); P(40,25,4,3,'#ffffff');
+    }
+    if(f.isJumping){
+      P(10,28,5,6,'#6e7681'); P(18,28,5,6,'#6e7681');
+      P(9,34,6,4,'#3a3f47'); P(18,34,6,4,'#3a3f47');
+      P(7,38,10,4,'#9aa3ad'); P(17,38,10,4,'#9aa3ad');
+    } else if(kicking&&fr===1){
+      P(10,28,5,10,'#6e7681'); P(9,38,8,4,'#9aa3ad');
+      P(19,28,7,3,'#9aa3ad'); P(26,28,6,3,'#6e7681');
+      P(32,27,4,5,'#3a3f47'); P(32,30,4,1,'#c9c9d2');
+    } else if(kicking&&fr===0){
+      P(10,28,5,10,'#6e7681'); P(9,38,8,4,'#9aa3ad');
+      P(18,28,5,4,'#9aa3ad'); P(20,32,4,3,'#6e7681'); P(21,35,3,3,'#3a3f47');
+    } else {
+      P(10,28,5,6,'#9aa3ad'); P(18,28,5,6,'#6e7681');
+      P(10,34,5,3,'#3a3f47'); P(18,34,5,3,'#3a3f47');
+      P(10+dx,37,5,4,'#6e7681'); P(18-dx,37,5,4,'#6e7681');
+      P(8+dx,41,9,3,'#9aa3ad'); P(17-dx,41,9,3,'#9aa3ad');
+      P(8+dx,43,9,1,'#4a5058'); P(17-dx,43,9,1,'#4a5058');
+    }
+  }
+  ctx.restore();
+}
+
+function gambarFighter(f){
+  pxr(f.x-20,396,f.width+40,4,'rgba(0,0,0,0.22)');
+  gambarKarakterPixel(f);
+}
+function gambarPreview(cx,groundY,tipe,facing,scale){
+  const tmp=buatFighter(0,tipe);
+  tmp.x=cx-tmp.width/2; tmp.y=groundY-tmp.height; tmp.facing=facing;
+  ctx.save();
+  ctx.translate(cx,groundY); ctx.scale(scale*facing,scale); ctx.translate(-cx,-groundY);
+  gambarKarakterPixel(tmp);
+  ctx.restore();
+}
+
+// ===== 🏫 ARENA LAPANGAN =====
+function gambarLapangan(){
+  const t=performance.now()/1000;
+  const par=(player.x+enemy.x)/2-400;
+  const bands=[['#4a9ad8',70],['#63b0e4',60],['#82c6ee',60],['#a8dcf2',60],['#cdeef8',50]];
+  let y=0; for(const [c,h] of bands){ pxr(-20,y,VW+40,h,c); y+=h; }
+  pixCircle(660-par*0.03,75,30,'#fff3b0'); pixCircle(660-par*0.03,75,22,'#fff9d6');
+  for(const [cx,cy] of [[150,70],[430,50],[590,110]]){
+    const cx2=cx-par*0.04;
+    pxr(cx2-24,cy,48,10,'#ffffff'); pxr(cx2-12,cy-10,34,10,'#ffffff'); pxr(cx2-4,cy+10,30,6,'#e8f4fc');
+  }
+  const p1=-par*0.08;
+  pixTri(120+p1,320,90,240,'#7fae5c'); pixTri(430+p1,330,110,320,'#74a452');
+  pixTri(720+p1,335,80,220,'#7fae5c');
+  // gedung sekolah
+  const p2=-par*0.16;
+  ctx.save(); ctx.translate(p2,0);
+  pxr(70,300,150,100,'#e8dcc0');
+  pxr(60,290,170,14,'#8a4a34');
+  pxr(90,330,24,24,'#5a8ac0'); pxr(120,330,24,24,'#5a8ac0'); pxr(150,330,24,24,'#5a8ac0');
+  pxr(96,336,4,4,'#cfe3f5'); pxr(126,336,4,4,'#cfe3f5'); pxr(156,336,4,4,'#cfe3f5');
+  pxr(115,352,26,48,'#7a4a2a');
+  pxr(118,352,20,6,'#5a3a20');
+  ctx.restore();
+  // tiang bendera merah putih
+  ctx.save(); ctx.translate(-par*0.12,0);
+  pxr(600,270,4,130,'#d0d0d8'); pxr(600,270,2,130,'#f0f0f4');
+  pxr(598,266,8,6,'#c9a83c');
+  const wv=Math.round(Math.sin(t*3)*3/3)*3;
+  pxr(604,274,27,9,'#e03030');
+  pxr(604+wv,283,27,9,'#f4f4f4');
+  ctx.restore();
+  // pohon
+  for(const tx of [300,720]){
+    const x=tx-par*0.1;
+    pxr(x-2,270,6,130,'#8a5a34'); pxr(x-2,270,2,130,'#a06a40');
+    pxr(x-30,258,34,10,'#3d8f3c'); pxr(x-4,250,36,10,'#3d8f3c');
+    pxr(x-22,244,44,10,'#4da349'); pxr(x-6,262,14,6,'#2f6e2c');
+  }
+  // tanah
+  pxr(-20,400,VW+40,60,'#C2B280'); pxr(-20,400,VW+40,5,'#d8c793'); pxr(-20,405,VW+40,3,'#a89468');
+  for(let i=0;i<20;i++){ pxr(((i*173+41)%780)+8,412+(i*37)%32,6,3,'rgba(0,0,0,0.08)'); }
+  for(let x=20;x<VW;x+=90) pxr(x,394,4,8,'#5d8f42');
+}
+
+// ===== 🌆 ARENA ROOFTOP =====
+function drapePixel(x0,x1,warna,gelap,t){
+  for(let x=x0;x<x1;x+=3){
+    const p=(x-x0)/(x1-x0);
+    const notch=Math.sin(p*Math.PI)*46;
+    const sway=Math.sin(t*1.3+x0)*8*Math.max(0,p-0.5)*2;
+    const len=150-notch*0.9+Math.sin(p*9+x0)*6+sway;
+    pxr(x,-4,3,len,warna);
+    if(Math.round((x-x0)/3)%4===0) pxr(x,-4,3,len*0.85,gelap);
+  }
+}
+function lampuPixel(x,y,t,fase){
+  const bob=Math.round(Math.sin(t*2+fase)*3/3)*3;
+  y+=bob;
+  pxr(x-1,-4,2,y-12,'#3a3a3a');
+  pxr(x-6,y-14,12,3,'#55555f');
+  pxr(x-8,y-11,16,16,'#ffe066');
+  pxr(x-8,y-5,16,2,'#c9a83c'); pxr(x-2,y-11,3,16,'#fff3b0');
+  pxr(x-5,y+5,10,3,'#55555f');
+  pxr(x-1,y+8,2,4,'#55555f');
+}
+function gambarRooftop(){
+  const t=performance.now()/1000;
+  const par=(player.x+enemy.x)/2-400;
+  const bands=[['#2b2d55',90],['#4a3a6e',50],['#7a4a6a',55],['#b06a52',55],['#d99a5e',50]];
+  let y=0; for(const [c,h] of bands){ pxr(-20,y,VW+40,h,c); y+=h; }
+  pixCircle(620-par*0.03,285,34,'#ffd98a');
+  pixCircle(620-par*0.03,285,26,'#ffeab0');
+  // skyline kota
+  const p1=-par*0.05;
+  for(const [bx,bw,bh] of [[30,60,120],[110,50,160],[180,70,100],[270,55,140],[350,65,110],[540,70,130],[620,55,160],[700,60,110]]){
+    pxr(bx+p1,340-bh,bw,bh,'#2a2440');
+  }
+  for(let i=0;i<14;i++){ pxr(((i*97+30)%760)+10+p1,340-((i*53)%90)-30,4,4,'#e8c96a'); }
+  // tangki air + antena
+  const p2=-par*0.12;
+  ctx.save(); ctx.translate(p2,0);
+  pxr(360,220,8,120,'#3a3050'); pxr(430,220,8,120,'#3a3050');
+  pxr(340,180,118,46,'#5a5070'); pxr(340,176,118,8,'#6a608a');
+  pxr(352,192,20,20,'#4a4060');
+  pxr(560,140,6,200,'#3a3050');
+  pxr(540,150,46,4,'#3a3050'); pxr(546,166,34,4,'#3a3050'); pxr(552,182,22,4,'#3a3050');
+  ctx.restore();
+  // terpal merah & biru
+  drapePixel(-10,190,'#c03030','#7a1a1a',t);
+  drapePixel(610,810,'#2e5fa3','#1c3d70',t);
+  // railing
+  pxr(-20,332,VW+40,4,'#8a8a96'); pxr(-20,350,VW+40,4,'#5a5a66');
+  for(let x=8;x<VW;x+=52){ pxr(x,326,4,32,'#a8b0bc'); pxr(x-2,322,8,4,'#c8d0da'); }
+  // lampu gantung
+  lampuPixel(120,96,t,0); lampuPixel(680,96,t,2);
+  // lantai rooftop
+  pxr(-20,340,VW+40,VH-340,'#5a5a66');
+  pxr(-20,340,VW+40,6,'#6e6e7c'); pxr(-20,346,VW+40,4,'#4a4a56');
+  const p3=-par*0.3;
+  for(let i=-10;i<=10;i++){
+    const xa=400+i*16+p3, xb=400+i*74+p3;
+    for(let k=0;k<=6;k++){ const xx=xa+(xb-xa)*k/6; pxr(xx,340+k*18,4,4,'rgba(20,20,30,0.5)'); }
+  }
+  [364,392,424].forEach(yy=>pxr(-20,yy,VW+40,3,'rgba(20,20,30,0.4)'));
+  // lingkaran lapangan baru
+  const mx=400,my=396;
+  pixEllipse(mx,my,150,26,'#c9a83c',6);
+  pixEllipse(mx,my,138,23,'#e8dfc8',4);
+  pixEllipse(mx,my,120,20,'#b03434',6);
+  pixEllipse(mx,my,96,16,'#3a6ea5',5);
+  pixEllipse(mx,my,70,12,'#e8dfc8',4);
+  pixEllipse(mx,my,46,8,'#c9a83c',4);
+  for(let a=0;a<16;a++){ const ang=a*Math.PI/8;
+    pxr(mx+Math.cos(ang)*108-2,my+Math.sin(ang)*18-2,4,4,'#c9a83c'); }
+  pxr(mx-24,my-3,48,6,'#b03434'); pxr(mx-12,my-2,24,4,'#e8dfc8');
+}
+
+// ===== HUD =====
+function gambarHealthBar(f,sisiKiri){
+  const barW=320,barH=24,y=20,x=sisiKiri?20:VW-20-barW;
+  ctx.fillStyle='#0a0a0a'; ctx.fillRect(x-6,y-6,barW+12,barH+12);
+  ctx.fillStyle='#c9a83c'; ctx.fillRect(x-3,y-3,barW+6,barH+6);
+  ctx.fillStyle='#1a1a1a'; ctx.fillRect(x,y,barW,barH);
+  const ghost=(Math.max(0,f.dispHP)/f.maxHP)*barW;
+  const main=(Math.max(0,f.hp)/f.maxHP)*barW;
+  ctx.fillStyle='#f5e6c8';
+  if(sisiKiri) ctx.fillRect(x,y,ghost,barH); else ctx.fillRect(x+barW-ghost,y,ghost,barH);
+  const ratio=Math.max(0,f.hp)/f.maxHP;
+  const g=ctx.createLinearGradient(0,y,0,y+barH);
+  if(ratio>0.3){ g.addColorStop(0,'#ffe98a'); g.addColorStop(0.5,'#f7c948'); g.addColorStop(1,'#e8a020'); }
+  else{ g.addColorStop(0,'#ff8a7a'); g.addColorStop(0.5,'#e8443a'); g.addColorStop(1,'#b02020'); }
+  ctx.fillStyle=g;
+  if(sisiKiri) ctx.fillRect(x,y,main,barH); else ctx.fillRect(x+barW-main,y,main,barH);
+  ctx.fillStyle='rgba(255,255,255,0.4)';
+  if(sisiKiri) ctx.fillRect(x,y+2,main,4); else ctx.fillRect(x+barW-main,y+2,main,4);
+}
+function gambarTitikMenang(x,y,n,dariKiri){
+  for(let i=0;i<2;i++){
+    const px=dariKiri?x+i*26:x-i*26;
+    ctx.fillStyle='#0a0a0a'; ctx.fillRect(px-11,y-11,22,22);
+    ctx.fillStyle=i<n?'#ffd700':'#333'; ctx.fillRect(px-8,y-8,16,16);
+    if(i<n){ ctx.fillStyle='#fff7cc'; ctx.fillRect(px-6,y-6,5,5); }
+  }
+}
+function gambarHUD(){
+  gambarHealthBar(player,true); gambarHealthBar(enemy,false);
+  teks(player.nama+' 1P',20,68,17,'#fff','left');
+  teks(enemy.nama+' 2P',780,68,17,'#fff','right');
+  gambarTitikMenang(118,62,menangPlayer,true);
+  gambarTitikMenang(672,62,menangBot,false);
+  const waktu=Math.max(0,Math.ceil(sisaWaktu/60));
+  const wt=String(waktu).padStart(2,'0');
+  ctx.font='bold 52px "Courier New", monospace'; ctx.textAlign='center';
+  ctx.fillStyle='#0a0a0a'; ctx.fillText(wt,VW/2+4,72);
+  ctx.fillStyle=waktu<=10?'#ff4040':'#ffd700'; ctx.fillText(wt,VW/2,68);
+  teks('RONDE '+ronde,VW/2,96,15,'#fff');
+  ctx.textAlign='left';
+}
+
+// ===== LAYAR-LAYAR =====
+function panel(x,y,w,h,hover,warna){
+  ctx.fillStyle='#0a0a0a'; ctx.fillRect(x-6,y-6,w+12,h+12);
+  ctx.fillStyle=hover?'gold':warna; ctx.fillRect(x-3,y-3,w+6,h+6);
+  ctx.fillStyle='rgba(0,0,0,0.55)'; ctx.fillRect(x,y,w,h);
+}
+function drawIntro(){
+  const t=introTimer;
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,VW,VH);
+  if(t>190){
+    ctx.globalAlpha=(240-t)/50;
+    teks('Z . A I   P R E S E N T S',VW/2,230,26,'#fff');
+    ctx.globalAlpha=1;
+  } else {
+    const p=Math.min(1,(190-t)/130);
+    const scale=3-2*(1-Math.pow(1-p,3));
+    ctx.save(); ctx.translate(VW/2,190); ctx.scale(scale,scale);
+    ctx.globalAlpha=Math.min(1,p*3);
+    teks('SCHOOL',0,-30,64,'#ffd700');
+    teks('FIGHTERS',0,40,64,'#e8443a');
+    ctx.restore(); ctx.globalAlpha=1;
+    if(t<60){
+      pxr(VW/2-160,250,320,6,'#e8443a');
+      teks('SEKOLAH MENENGAH PERTARUNGAN',VW/2,295,18,'#aaa');
+      if(t%40<20) teks('TEKAN TOMBOL / TAP UNTUK LANJUT',VW/2,380,15,'#fff');
+    }
+  }
+}
+function drawMenu(){
+  ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(0,0,VW,VH);
+  teks('SCHOOL FIGHTERS',VW/2+4,144,52,'#0a0a0a');
+  teks('SCHOOL FIGHTERS',VW/2,140,52,'#ffd700');
+  teks('SEKOLAH MENENGAH PERTARUNGAN',VW/2,168,15,'#e86850');
+  const hover=dalamKotak(mouse.x,mouse.y,270,225,260,72);
+  panel(270,225,260,72,hover,'#e8443a');
+  teks('MATCH',VW/2,273,38,hover?'#ffd700':'#fff');
+  teks('KLIK MATCH ATAU TEKAN ENTER',VW/2,330,15,'#ddd');
+  teks('◀▶ JALAN   SPASI LOMPAT   A PUKUL   S TENDANG',VW/2,360,14,'#bbb');
+  teks('D LEMPAR SENJATA   L BLOCK   F FULLSCREEN',VW/2,382,14,'#bbb');
+}
+function drawPilih(){
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(0,0,VW,VH);
+  teks(pilihFase===1?'1P  PILIH KARAKTER':'2P  PILIH KARAKTER',VW/2,64,34,pilihFase===1?'#ffd700':'#ff6a5a');
+  teks(pilihFase===1?'(setelah ini giliran 2P - boleh karakter sama!)':'',VW/2,92,14,'#aaa');
+  const icons={andra:'🧑‍🎓',jalal:'🧔',jimmy:'🐵',robo:'🤖'};
+  for(let i=0;i<4;i++){
+    const tp=PILIHAN[i], K=KARAKTER[tp], pn=panelPilih(i);
+    const hover=dalamKotak(mouse.x,mouse.y,pn.x,pn.y,pn.w,pn.h);
+    panel(pn.x,pn.y,pn.w,pn.h,hover,K.warna);
+    ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fillRect(pn.x,pn.y,pn.w,pn.h);
+    teks(K.nama,pn.x+pn.w/2,pn.y+30,20,hover?'#ffd700':'#fff');
+    teks(K.julukan,pn.x+pn.w/2,pn.y+50,11,'#ccc');
+    pxr(pn.x+pn.w/2-36,pn.y+232,72,6,'rgba(0,0,0,0.4)');
+    gambarPreview(pn.x+pn.w/2,pn.y+232,tp,1,K.pvScale);
+    teks(K.deskripsi,pn.x+pn.w/2,pn.y+256,12,'#9f9');
+    teks('['+(i+1)+']',pn.x+14,pn.y+272,13,'#888');
+    if(pilihFase===2&&pilihanPlayer===tp){
+      pxr(pn.x+pn.w-44,pn.y-16,44,22,'#ffd700');
+      teks('1P',pn.x+pn.w-22,pn.y,15,'#000');
+    }
+  }
+  teks('KLIK KARAKTER -> PILIH ARENA',VW/2,412,15,'#ccc');
+}
+function drawArena(){
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(0,0,VW,VH);
+  teks('PILIH ARENA',VW/2,64,36,'#fff');
+  teks(KARAKTER[pilihanPlayer].nama+' (1P)  VS  '+KARAKTER[pilihanBot].nama+' (2P)',VW/2,94,17,'#ffd700');
+  const hK=dalamKotak(mouse.x,mouse.y,110,130,250,240), hR=dalamKotak(mouse.x,mouse.y,440,130,250,240);
+  panel(110,130,250,240,hK,'#4a8a4a');
+  ctx.font='70px Arial';
+  ctx.fillText('🏫',235,245);
+  ctx.fillStyle=hK?'gold':'white'; ctx.font='bold 24px Arial';
+  teks('LAPANGAN',235,305,24,hK?'#ffd700':'#fff');
+  teks('Siang cerah, bendera berkibar',235,330,12,'#bbb');
+  ctx.fillStyle='yellow'; ctx.font='bold 40px Arial'; ctx.fillText('ATAU',VW/2,265);
+  panel(440,130,250,240,hR,'#b03434');
+  ctx.font='70px Arial';
+  ctx.fillText('🌆',565,245);
+  ctx.fillStyle=hR?'gold':'white'; ctx.font='bold 24px Arial';
+  teks('ROOFTOP',565,305,24,hR?'#ffd700':'#fff');
+  teks('Senja, di atas gedung sekolah',565,330,12,'#bbb');
+  teks('(KEYBOARD: 1 = LAPANGAN, 2 = ROOFTOP)',VW/2,415,14,'#ccc');
+}
+function gambarTombolPause(b,teksnya){
+  const hover=dalamKotak(mouse.x,mouse.y,b.x,b.y,b.w,b.h);
+  panel(b.x,b.y,b.w,b.h,hover,'#e8443a');
+  teks(teksnya,b.x+b.w/2,b.y+b.h/2+9,26,'#fff');
+}
+
+function draw(){
+  ctx.setTransform(SCALE,0,0,SCALE,0,0);
+  ctx.imageSmoothingEnabled=false;
+  ctx.clearRect(0,0,VW,VH);
+
+  ctx.save();
+  if(shake>0) ctx.translate(Math.round((Math.random()-0.5)*shake/3)*3, Math.round((Math.random()-0.5)*shake/3)*3);
+
+  ctx.translate(cam.x,385); ctx.scale(cam.z,cam.z); ctx.translate(-cam.x,-385);
+
+  if(gameState==='menu'||gameState==='pilih'||gameState==='arena'||pilihanArena==='lapangan') gambarLapangan();
+  else gambarRooftop();
+
+  for(const p of proyektil){
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate(Math.round(p.rot/(Math.PI/4))*(Math.PI/4));
+    if(p.tipe==='sandal'){
+      pxr(-16,-6,32,10,'#5a3d22'); pxr(-14,-4,28,6,'#6e4c2c');
+      pxr(-4,-10,6,6,'#2b1d10'); pxr(4,-10,6,6,'#2b1d10'); pxr(-2,-6,10,4,'#2b1d10');
+    } else if(p.tipe==='penghapus'){
+      pxr(-10,-6,20,10,'#f0f0f8'); pxr(-10,0,20,5,'#3a6ea5');
+      pxr(-13,-7,3,12,'#d8d8e8');
+    } else if(p.tipe==='pisang'){
+      pxr(-10,-3,20,6,'#ffd94a'); pxr(-8,1,16,3,'#f0c030');
+      pxr(-13,-2,4,4,'#7a5a1a'); pxr(9,-2,4,4,'#7a5a1a');
+    } else {
+      pxr(-12,-2,20,4,'#59d5ff'); pxr(6,-1,8,2,'#ffffff');
+      pxr(-20,-1,8,2,'rgba(89,213,255,0.4)');
+    }
+    ctx.restore();
+  }
+  gambarFighter(enemy);
+  gambarFighter(player);
+  ctx.restore();
+
+  if(gameState==='ronde'||gameState==='main'||gameState==='ko'||gameState==='pause'){
+    gambarHUD();
+    if(gameState==='ronde'){
+      teks(introTimer>40?'RONDE '+ronde:'FIGHT!!',VW/2,215,56,introTimer>40?'#fff':'#ffd700');
+    }
+  }
+
+  if(gameState==='main'||gameState==='ronde'){
+    const hP=dalamKotak(mouse.x,mouse.y,TOMBOL_PAUSE.x,TOMBOL_PAUSE.y,TOMBOL_PAUSE.w,TOMBOL_PAUSE.h);
+    ctx.fillStyle=hP?'rgba(0,0,0,0.75)':'rgba(0,0,0,0.5)';
+    ctx.fillRect(TOMBOL_PAUSE.x,TOMBOL_PAUSE.y,TOMBOL_PAUSE.w,TOMBOL_PAUSE.h);
+    ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=2;
+    ctx.strokeRect(TOMBOL_PAUSE.x,TOMBOL_PAUSE.y,TOMBOL_PAUSE.w,TOMBOL_PAUSE.h);
+    ctx.fillStyle='white';
+    ctx.fillRect(TOMBOL_PAUSE.x+12,TOMBOL_PAUSE.y+12,6,18);
+    ctx.fillRect(TOMBOL_PAUSE.x+24,TOMBOL_PAUSE.y+12,6,18);
+  }
+
+  if(gameState==='intro') drawIntro();
+  else if(gameState==='menu') drawMenu();
+  else if(gameState==='pilih') drawPilih();
+  else if(gameState==='arena') drawArena();
+
+  if(gameState==='ko'){
+    ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,VW,VH);
+    const judul=koReason==='seri'?'SERI!':(koReason==='waktu'?'TIME UP!':'K.O.!');
+    teks(judul,VW/2,180,80,'#ffd700');
+    if(koReason==='seri') teks('RONDE DIULANG!',VW/2,235,30,'#fff');
+    else teks((pemenang===player?player.nama:enemy.nama)+' MENANG RONDE INI!',VW/2,235,28,'#fff');
+    teks('SKOR: '+menangPlayer+' - '+menangBot,VW/2,268,18,'#ddd');
+    if(koTimer>45) teks('TEKAN R / TAP LAYAR UNTUK LANJUT',VW/2,308,16,'#ccc');
+  }
+
+  if(gameState==='pause'){
+    ctx.fillStyle='rgba(0,0,0,0.72)'; ctx.fillRect(0,0,VW,VH);
+    teks('PAUSED',VW/2,130,64,'#ffd700');
+    gambarTombolPause(BTN_LANJUT,'LANJUT');
+    gambarTombolPause(BTN_ULANG,'ULANG RONDE');
+    gambarTombolPause(BTN_MENU,'MENU');
+    teks('P/ESC = LANJUT - R = ULANG - M = MENU',VW/2,405,14,'#999');
+  }
+
+  if(gameState==='akhir'){
+    ctx.fillStyle='rgba(0,0,0,0.65)'; ctx.fillRect(0,0,VW,VH);
+    const juara=menangPlayer>=2?player.nama:enemy.nama;
+    teks(menangPlayer>=2?'JUARA!':'KALAH...',VW/2,185,58,menangPlayer>=2?'#ffd700':'#e8443a');
+    teks(juara+' '+menangPlayer+' - '+menangBot,VW/2,245,30,'#fff');
+    teks('TEKAN R / TAP LAYAR UNTUK BALIK KE MENU',VW/2,295,16,'#ccc');
+  }
+}
+
+function gameLoop(){
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+gameLoop();
+</script>
+</body>
+</html>
